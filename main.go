@@ -11,6 +11,8 @@ import (
 
 // Based on the example program found here:
 // https://www.jvt.me/posts/2023/05/15/go-parse-binary-architecture/
+// Docs for debug package can be found here:
+// https://pkg.go.dev/debug
 func main() {
 	file, err := os.OpenFile("gofile.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
