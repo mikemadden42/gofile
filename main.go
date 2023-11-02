@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 // Based on the example program found here:
@@ -14,7 +15,9 @@ import (
 // Docs for debug package can be found here:
 // https://pkg.go.dev/debug
 func main() {
-	file, err := os.OpenFile("gofile.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	fullBinary, _ := os.Executable()
+	baseBinary := filepath.Base(fullBinary)
+	file, err := os.OpenFile(baseBinary+".log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		log.Fatal(err)
 	}
