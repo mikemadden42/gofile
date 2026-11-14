@@ -1,104 +1,113 @@
+// Package main implements gofile, a file(1)-like utility that reports the
+// format and CPU architecture of Mach-O, ELF, and PE binaries.
 package main
 
 import (
 	"debug/elf"
 	"debug/macho"
 	"debug/pe"
+	"errors"
+	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Based on the example program found here:
 // https://www.jvt.me/posts/2023/05/15/go-parse-binary-architecture/
 // Docs for debug package can be found here:
 // https://pkg.go.dev/debug
+
+type parser struct {
+	format string
+	parse  func(name string) (string, error)
+}
+
+var parsers = []parser{
+	{"Mach-O", parseMac},
+	{"Mach-O universal", parseMacUniversalBinary},
+	{"ELF", parseElf},
+	{"PE", parsePE},
+}
+
+var errUnrecognized = errors.New("unrecognized format")
+
 func main() {
-	fullBinary, _ := os.Executable()
-	baseBinary := filepath.Base(fullBinary)
-	file, err := os.OpenFile(baseBinary+".log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		log.Fatal(err)
+	verbose := flag.Bool("v", false, "print why each format did not match")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "usage: %s [-v] file...\n", filepath.Base(os.Args[0]))
+		flag.PrintDefaults()
 	}
-	defer func(file *os.File) {
-		err := file.Close()
-		if err != nil {
-			log.Fatal(err)
+	flag.Parse()
+
+	if flag.NArg() == 0 {
+		flag.Usage()
+		os.Exit(2)
+	}
+
+	status := 0
+	for _, name := range flag.Args() {
+		if err := identify(name, *verbose); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
+			status = 1
 		}
-	}(file)
-
-	logger := log.New(file, "", log.LstdFlags)
-
-	if len(os.Args) != 2 {
-		log.Fatal("Need more args")
 	}
-	command := os.Args[1]
-
-	err = parseMac(command)
-	if err != nil {
-		logger.Println("Doesn't look like a Mach-O file:", err, command)
-	}
-
-	err = parseMacUniversalBinary(command)
-	if err != nil {
-		logger.Println("Doesn't look like a Mach-O Universal Binary:", err, command)
-	}
-
-	err = parseElf(command)
-	if err != nil {
-		logger.Println("Doesn't look like an ELF file:", err, command)
-	}
-
-	err = parsePE(command)
-	if err != nil {
-		logger.Println("Doesn't look like a PE file:", err, command)
-	}
+	os.Exit(status)
 }
 
-func parseMac(command string) error {
-	f, err := macho.Open(command)
-	if err != nil {
+func identify(name string, verbose bool) error {
+	if _, err := os.Stat(name); err != nil {
 		return err
 	}
 
-	fmt.Printf("%s is a Mach-O binary with CPU architecture %v\n", command, f.Cpu.String())
+	for _, p := range parsers {
+		desc, err := p.parse(name)
+		if err == nil {
+			fmt.Printf("%s is %s\n", name, desc)
+			return nil
+		}
+		if verbose {
+			fmt.Fprintf(os.Stderr, "%s: not %s: %v\n", name, p.format, err)
+		}
+	}
 
-	return nil
+	return errUnrecognized
 }
 
-func parseMacUniversalBinary(command string) error {
-	f, err := macho.OpenFat(command)
+func parseMac(name string) (string, error) {
+	f, err := macho.Open(name)
 	if err != nil {
-		return err
+		return "", err
 	}
-	fmt.Printf("%s is a Mach-O universal binary with architectures:", command)
+	return fmt.Sprintf("a Mach-O binary with CPU architecture %v", f.Cpu), f.Close()
+}
+
+func parseMacUniversalBinary(name string) (string, error) {
+	f, err := macho.OpenFat(name)
+	if err != nil {
+		return "", err
+	}
+	arches := make([]string, 0, len(f.Arches))
 	for _, fa := range f.Arches {
-		fmt.Printf(" %v", fa.Cpu.String())
+		arches = append(arches, fa.Cpu.String())
 	}
-	fmt.Println()
 
-	return nil
+	return "a Mach-O universal binary with architectures: " + strings.Join(arches, " "), f.Close()
 }
 
-func parseElf(command string) error {
-	f, err := elf.Open(command)
+func parseElf(name string) (string, error) {
+	f, err := elf.Open(name)
 	if err != nil {
-		return err
+		return "", err
 	}
-
-	fmt.Printf("%s is an Executable and Linked Format (ELF) binary with CPU architecture %v\n", command, f.Machine.String())
-
-	return nil
+	return fmt.Sprintf("an Executable and Linked Format (ELF) binary with CPU architecture %v", f.Machine), f.Close()
 }
 
-func parsePE(command string) error {
-	f, err := pe.Open(command)
+func parsePE(name string) (string, error) {
+	f, err := pe.Open(name)
 	if err != nil {
-		return err
+		return "", err
 	}
-
-	fmt.Printf("%s is a PE binary with CPU architecture 0x%x\n", command, f.Machine)
-
-	return nil
+	return fmt.Sprintf("a PE binary with CPU architecture 0x%x", f.Machine), f.Close()
 }
