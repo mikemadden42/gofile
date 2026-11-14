@@ -13,7 +13,7 @@ Findings from a project review (2026-11-14).
   - "Need more args" is also printed for too *many* arguments; no usage line.
   - Only one file accepted per run (`file(1)` accepts many).
   - `log.Fatal` skips the deferred `Close`, making it pointless.
-- [ ] **Uneven output:**
+- [x] **Uneven output:**
   - Mach-O prints `CpuArm64` (Go constant name) instead of `arm64`.
   - PE prints raw hex (`0x8664`) instead of a name like `amd64`.
   - No 32/64-bit or file type (executable, shared library, object).
